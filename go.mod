@@ -1,4 +1,4 @@
-module go-explore
+module llg
 
 go 1.19
 
