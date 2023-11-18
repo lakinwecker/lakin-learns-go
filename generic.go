@@ -55,98 +55,124 @@ func get(client *resty.Client, url string) (resp *resty.Response, err error) {
 	resp, err = client.R().
 		EnableTrace().
 		Get(url)
+	if err != nil {
+		err = fmt.Errorf("Error getting url(%s): %w", url, err)
+		return
+	}
+	return
+}
+
+func FromJson[T any](jsonString string) (val T, err error) {
+	err = json.Unmarshal([]byte(jsonString), &val)
+	if err != nil {
+		err = fmt.Errorf("Error getting parsing into %T: %w", val, err)
+		return
+	}
+	return
+
+}
+
+func GetGithubUrls(client *resty.Client) (githubUrls GithubUrls, err error) {
+	resp, err := get(client, "https://api.github.com")
+	if err != nil {
+		return
+	}
+	githubUrls, err = FromJson[GithubUrls](resp.String())
+	return
+}
+
+func GetOrganizationInfo(client *resty.Client, githubUrls GithubUrls, organizationName string) (organizationInfo OrganizationInfo, err error) {
+	organizationUrl := githubUrls.OrganizationUrl
+	organizationUrl = strings.Replace(organizationUrl, "{org}", organizationName, 1)
+
+	resp, err := get(client, organizationUrl)
+	if err != nil {
+		return
+	}
+
+	organizationInfo, err = FromJson[OrganizationInfo](resp.String())
+	return
+}
+
+func GetOrganizationRepos(client *resty.Client, organizationInfo OrganizationInfo) (repos []Repo, err error) {
+	reposUrl := organizationInfo.ReposUrl
+	resp, err := get(client, reposUrl)
+	if err != nil {
+		return
+	}
+
+	repos, err = FromJson[[]Repo](resp.String())
+	return
+}
+
+func GetUserInfo(client *resty.Client, contributor Contributor) (user User, err error) {
+	resp, err := get(client, contributor.Url)
+	if err != nil {
+		return
+	}
+
+	user, err = FromJson[User](resp.String())
+	return
+}
+
+func GetMostPopularRepo(repos []Repo) (mostPopular Repo) {
+	for _, repo := range repos {
+		if repo.WatchersCount > mostPopular.WatchersCount {
+			mostPopular = repo
+		}
+	}
+	return
+}
+
+func GetBiggestContributor(contributors []Contributor) (biggestContributor Contributor) {
+	for _, contributor := range contributors {
+		if contributor.Contributions > biggestContributor.Contributions {
+			biggestContributor = contributor
+		}
+	}
+	return
+}
+
+func GetContributors(client *resty.Client, mostPopular Repo) (contributors []Contributor, err error) {
+	contributorsUrl := mostPopular.ContributorsUrl
+
+	resp, err := get(client, contributorsUrl)
+	if err != nil {
+		return
+	}
+
+	contributors, err = FromJson[[]Contributor](resp.String())
 	return
 }
 
 func DoItGolangStyle(organizationName string) (user User, err error) {
 	client := resty.New()
 
-	resp, err := get(client, "https://api.github.com")
+	githubUrls, err := GetGithubUrls(client)
 	if err != nil {
-		err = fmt.Errorf("Error getting github urls: %w", err)
-		return
-	}
-	fmt.Println(resp.String())
-	respString := resp.String()
-	var githubUrls GithubUrls
-	err = json.Unmarshal([]byte(respString), &githubUrls)
-	if err != nil {
-		err = fmt.Errorf("Error getting parsing urls: %w", err)
-		return
-	}
-	organizationUrl := githubUrls.OrganizationUrl
-	organizationUrl = strings.Replace(organizationUrl, "{org}", organizationName, 1)
-
-	resp, err = get(client, organizationUrl)
-	if err != nil {
-		err = fmt.Errorf("Error getting organization info from %s: %w", organizationUrl, err)
 		return
 	}
 
-	respString = resp.String()
-	var orgUrls OrganizationInfo
-	err = json.Unmarshal([]byte(respString), &orgUrls)
+	organizationInfo, err := GetOrganizationInfo(client, githubUrls, organizationName)
 	if err != nil {
-		err = fmt.Errorf("Error parsing organization info: %w", err)
 		return
 	}
 
-	reposUrl := orgUrls.ReposUrl
-	resp, err = get(client, reposUrl)
+	repos, err := GetOrganizationRepos(client, organizationInfo)
 	if err != nil {
-		err = fmt.Errorf("Error getting repos url: %w", err)
 		return
 	}
 
-	respString = resp.String()
-	var repos []Repo
-	err = json.Unmarshal([]byte(respString), &repos)
+	mostPopular := GetMostPopularRepo(repos)
+	contributors, err := GetContributors(client, mostPopular)
 	if err != nil {
-		err = fmt.Errorf("Error parsing repos: %w", err)
-		return
-	}
-	var mostPopular Repo
-	for _, repo := range repos {
-		if repo.WatchersCount > mostPopular.WatchersCount {
-			mostPopular = repo
-		}
-	}
-	contributorsUrl := mostPopular.ContributorsUrl
-
-	resp, err = get(client, contributorsUrl)
-	if err != nil {
-		err = fmt.Errorf("Error getting contributorUrl: %w", err)
 		return
 	}
 
-	respString = resp.String()
-	var contributors []Contributor
-	err = json.Unmarshal([]byte(respString), &contributors)
-	if err != nil {
-		err = fmt.Errorf("Error parsing contributors: %w", err)
-		return
-	}
+	biggestContributor := GetBiggestContributor(contributors)
+	user, err = GetUserInfo(client, biggestContributor)
 
-	var biggestContributor Contributor
-	for _, contributor := range contributors {
-		if contributor.Contributions > biggestContributor.Contributions {
-			biggestContributor = contributor
-		}
-	}
-
-	resp, err = get(client, biggestContributor.Url)
-	if err != nil {
-		err = fmt.Errorf("Error getting biggest contributor: %w", err)
-		return
-	}
-	respString = resp.String()
-	err = json.Unmarshal([]byte(respString), &user)
-	if err != nil {
-		err = fmt.Errorf("Error parsing biggest contributor: %w", err)
-		return
-	}
 	return
-
 }
 
 func main() {
