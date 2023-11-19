@@ -1,3 +1,5 @@
+github.com/IBM/fp-go v1.0.57 h1:JQB6qYFTDgJhXXK4jqoBiOh3l5QCdnF7ctoNerF6TmQ=
+github.com/IBM/fp-go v1.0.57/go.mod h1:VaZsB98yLOqZB/8ZjiSfhMa0T+R7/HhAKsuGWy6S+Os=
 github.com/go-resty/resty/v2 v2.7.0 h1:me+K9p3uhSmXtrBZ4k9jcEAfJmuC8IivWHwaLZwPrFY=
 github.com/go-resty/resty/v2 v2.7.0/go.mod h1:9PWDzw47qPphMRFfhsyk0NnSgvluHcljSMVIq3w7q0I=
 github.com/go-resty/resty/v2 v2.10.0 h1:Qla4W/+TMmv0fOeeRqzEpXPLfTUnR5HZ1+lGs+CkiCo=

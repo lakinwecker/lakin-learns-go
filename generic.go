@@ -27,6 +27,11 @@ import (
 // Import resty into your code and refer it as `resty`.
 import "github.com/go-resty/resty/v2"
 
+// import "github.com/jessevdk/go-flags"
+// import "github.com/repeale/fp-go"
+import either "github.com/IBM/fp-go/either"
+import function "github.com/IBM/fp-go/function"
+
 type GithubUrls struct {
 	OrganizationUrl string `json:"organization_url"`
 }
@@ -51,68 +56,59 @@ type User struct {
 	Login string `json:"login"`
 }
 
-func get(client *resty.Client, url string) (resp *resty.Response, err error) {
-	resp, err = client.R().
+func get(client *resty.Client, url string) either.Either[error, *resty.Response] {
+	resp, err := client.R().
 		EnableTrace().
 		Get(url)
 	if err != nil {
-		err = fmt.Errorf("Error getting url(%s): %w", url, err)
-		return
+		return either.Left[*resty.Response](fmt.Errorf("Error getting url(%s): %w", url, err))
 	}
-	return
+	return either.Right[error](resp)
 }
 
-func FromJson[T any](jsonString string) (val T, err error) {
-	err = json.Unmarshal([]byte(jsonString), &val)
+func FromJson[T any](jsonString string) either.Either[error, T] {
+	var val T
+	err := json.Unmarshal([]byte(jsonString), &val)
 	if err != nil {
-		err = fmt.Errorf("Error getting parsing into %T: %w", val, err)
-		return
+		return either.Left[T](fmt.Errorf("Error getting parsing into %T: %w", val, err))
 	}
-	return
-
+	return either.Right[error](val)
 }
 
-func GetGithubUrls(client *resty.Client) (githubUrls GithubUrls, err error) {
-	resp, err := get(client, "https://api.github.com")
-	if err != nil {
-		return
-	}
-	githubUrls, err = FromJson[GithubUrls](resp.String())
-	return
+func GetToJson[T any](client *resty.Client, url string) either.Either[error, T] {
+	return either.MonadChain(
+		either.MonadMap(
+			get(client, url),
+			GetResponseString,
+		),
+		FromJson[T],
+	)
 }
 
-func GetOrganizationInfo(client *resty.Client, githubUrls GithubUrls, organizationName string) (organizationInfo OrganizationInfo, err error) {
+func GetResponseString(resp *resty.Response) string {
+	return resp.String()
+}
+
+func GetGithubUrls(client *resty.Client) either.Either[error, GithubUrls] {
+	return GetToJson[GithubUrls](client, "https://api.github.com")
+}
+
+func GetOrganizationInfo(client *resty.Client, githubUrls GithubUrls, organizationName string) either.Either[error, OrganizationInfo] {
 	organizationUrl := githubUrls.OrganizationUrl
 	organizationUrl = strings.Replace(organizationUrl, "{org}", organizationName, 1)
-
-	resp, err := get(client, organizationUrl)
-	if err != nil {
-		return
-	}
-
-	organizationInfo, err = FromJson[OrganizationInfo](resp.String())
-	return
+	return GetToJson[OrganizationInfo](client, organizationUrl)
 }
 
-func GetOrganizationRepos(client *resty.Client, organizationInfo OrganizationInfo) (repos []Repo, err error) {
-	reposUrl := organizationInfo.ReposUrl
-	resp, err := get(client, reposUrl)
-	if err != nil {
-		return
-	}
-
-	repos, err = FromJson[[]Repo](resp.String())
-	return
+func GetOrganizationRepos(client *resty.Client, organizationInfo OrganizationInfo) either.Either[error, []Repo] {
+	return GetToJson[[]Repo](client, organizationInfo.ReposUrl)
 }
 
-func GetUserInfo(client *resty.Client, contributor Contributor) (user User, err error) {
-	resp, err := get(client, contributor.Url)
-	if err != nil {
-		return
-	}
+func GetUserInfo(client *resty.Client, contributor Contributor) either.Either[error, User] {
+	return GetToJson[User](client, contributor.Url)
+}
 
-	user, err = FromJson[User](resp.String())
-	return
+func GetContributors(client *resty.Client, mostPopular Repo) either.Either[error, []Contributor] {
+	return GetToJson[[]Contributor](client, mostPopular.ContributorsUrl)
 }
 
 func GetMostPopularRepo(repos []Repo) (mostPopular Repo) {
@@ -133,53 +129,39 @@ func GetBiggestContributor(contributors []Contributor) (biggestContributor Contr
 	return
 }
 
-func GetContributors(client *resty.Client, mostPopular Repo) (contributors []Contributor, err error) {
-	contributorsUrl := mostPopular.ContributorsUrl
-
-	resp, err := get(client, contributorsUrl)
-	if err != nil {
-		return
-	}
-
-	contributors, err = FromJson[[]Contributor](resp.String())
-	return
-}
-
-func DoItGolangStyle(organizationName string) (user User, err error) {
+func DoItFpStyle(organizationName string) either.Either[error, User] {
 	client := resty.New()
 
-	githubUrls, err := GetGithubUrls(client)
-	if err != nil {
-		return
-	}
+	return function.Pipe6(
+		GetGithubUrls(resty.New()),
+		either.Chain(
+			func(githubUrls GithubUrls) either.Either[error, OrganizationInfo] {
+				return GetOrganizationInfo(client, githubUrls, organizationName)
+			},
+		),
+		either.Chain(func(organizationInfo OrganizationInfo) either.Either[error, []Repo] {
+			return GetOrganizationRepos(client, organizationInfo)
+		}),
+		either.Map[error](GetMostPopularRepo),
+		either.Chain(func(mostPopular Repo) either.Either[error, []Contributor] {
+			return GetContributors(client, mostPopular)
+		}),
+		either.Map[error](GetBiggestContributor),
+		either.Chain(func(biggestContributor Contributor) either.Either[error, User] {
+			return GetUserInfo(client, biggestContributor)
+		}),
+	)
 
-	organizationInfo, err := GetOrganizationInfo(client, githubUrls, organizationName)
-	if err != nil {
-		return
-	}
-
-	repos, err := GetOrganizationRepos(client, organizationInfo)
-	if err != nil {
-		return
-	}
-
-	mostPopular := GetMostPopularRepo(repos)
-	contributors, err := GetContributors(client, mostPopular)
-	if err != nil {
-		return
-	}
-
-	biggestContributor := GetBiggestContributor(contributors)
-	user, err = GetUserInfo(client, biggestContributor)
-
-	return
 }
 
 func main() {
-	user, err := DoItGolangStyle("golang")
-	if err != nil {
-		fmt.Println("Error golang style:", err)
-	} else {
-		fmt.Println("The largest contributor to go is:", user.Name, "(", user.Login, ")")
-	}
+	fmt.Println(
+		either.Fold[error, User, string](
+			func(err error) string {
+				return fmt.Sprint("Error golang style:", err)
+			},
+			func(user User) string {
+				return fmt.Sprint("The largest contributor to go is:", user.Name, "(", user.Login, ")")
+			})(DoItFpStyle("golang")),
+	)
 }

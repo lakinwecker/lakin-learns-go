@@ -4,6 +4,8 @@ go 1.19
 
 require github.com/jessevdk/go-flags v1.5.0
 
+require github.com/IBM/fp-go v1.0.57 // indirect
+
 require (
 	github.com/go-resty/resty/v2 v2.10.0
 	github.com/repeale/fp-go v0.11.1
