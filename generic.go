@@ -93,30 +93,22 @@ func GetGithubUrls(client *resty.Client) either.Either[error, GithubUrls] {
 	return GetToJson[GithubUrls](client, "https://api.github.com")
 }
 
-func GetOrganizationInfo(client *resty.Client, organizationName string) func(GithubUrls) either.Either[error, OrganizationInfo] {
-	return func(githubUrls GithubUrls) either.Either[error, OrganizationInfo] {
-		organizationUrl := githubUrls.OrganizationUrl
-		organizationUrl = strings.Replace(organizationUrl, "{org}", organizationName, 1)
-		return GetToJson[OrganizationInfo](client, organizationUrl)
-	}
+func GetOrganizationInfo(client *resty.Client, organizationName string, githubUrls GithubUrls) either.Either[error, OrganizationInfo] {
+	organizationUrl := githubUrls.OrganizationUrl
+	organizationUrl = strings.Replace(organizationUrl, "{org}", organizationName, 1)
+	return GetToJson[OrganizationInfo](client, organizationUrl)
 }
 
-func GetOrganizationRepos(client *resty.Client) func(OrganizationInfo) either.Either[error, []Repo] {
-	return func(organizationInfo OrganizationInfo) either.Either[error, []Repo] {
-		return GetToJson[[]Repo](client, organizationInfo.ReposUrl)
-	}
+func GetOrganizationRepos(client *resty.Client, organizationInfo OrganizationInfo) either.Either[error, []Repo] {
+	return GetToJson[[]Repo](client, organizationInfo.ReposUrl)
 }
 
-func GetUserInfo(client *resty.Client) func(Contributor) either.Either[error, User] {
-	return func(contributor Contributor) either.Either[error, User] {
-		return GetToJson[User](client, contributor.Url)
-	}
+func GetUserInfo(client *resty.Client, contributor Contributor) either.Either[error, User] {
+	return GetToJson[User](client, contributor.Url)
 }
 
-func GetContributors(client *resty.Client) func(Repo) either.Either[error, []Contributor] {
-	return func(mostPopular Repo) either.Either[error, []Contributor] {
-		return GetToJson[[]Contributor](client, mostPopular.ContributorsUrl)
-	}
+func GetContributors(client *resty.Client, mostPopular Repo) either.Either[error, []Contributor] {
+	return GetToJson[[]Contributor](client, mostPopular.ContributorsUrl)
 }
 
 func GetMostPopularRepo(repos []Repo) (mostPopular Repo) {
@@ -142,12 +134,12 @@ func DoItFpStyle(organizationName string) either.Either[error, User] {
 
 	return function.Pipe6(
 		GetGithubUrls(client),
-		either.Chain(GetOrganizationInfo(client, organizationName)),
-		either.Chain(GetOrganizationRepos(client)),
+		either.Chain(function.Curry3(GetOrganizationInfo)(client)(organizationName)),
+		either.Chain(function.Curry2(GetOrganizationRepos)(client)),
 		either.Map[error](GetMostPopularRepo),
-		either.Chain(GetContributors(client)),
+		either.Chain(function.Curry2(GetContributors)(client)),
 		either.Map[error](GetBiggestContributor),
-		either.Chain(GetUserInfo(client)),
+		either.Chain(function.Curry2(GetUserInfo)(client)),
 	)
 
 }
