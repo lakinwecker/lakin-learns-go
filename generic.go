@@ -29,6 +29,7 @@ import "github.com/go-resty/resty/v2"
 import E "github.com/IBM/fp-go/either"
 import F "github.com/IBM/fp-go/function"
 import J "github.com/IBM/fp-go/json"
+import A "github.com/IBM/fp-go/array"
 
 type GithubUrls struct {
 	OrganizationUrl string `json:"organization_url"`
@@ -95,21 +96,21 @@ func GetContributors(client *resty.Client, mostPopular Repo) E.Either[error, []C
 }
 
 func GetMostPopularRepo(repos []Repo) (mostPopular Repo) {
-	for _, repo := range repos {
-		if repo.WatchersCount > mostPopular.WatchersCount {
-			mostPopular = repo
+	return F.Pipe1(repos, A.Reduce(func(acc, repo Repo) Repo {
+		if acc.WatchersCount > repo.WatchersCount {
+			return acc
 		}
-	}
-	return
+		return repo
+	}, repos[0]))
 }
 
 func GetBiggestContributor(contributors []Contributor) (biggestContributor Contributor) {
-	for _, contributor := range contributors {
-		if contributor.Contributions > biggestContributor.Contributions {
-			biggestContributor = contributor
+	return F.Pipe1(contributors, A.Reduce(func(acc, contributor Contributor) Contributor {
+		if acc.Contributions > contributor.Contributions {
+			return acc
 		}
-	}
-	return
+		return contributor
+	}, contributors[0]))
 }
 
 func DoItFpStyle(organizationName string) E.Either[error, User] {
