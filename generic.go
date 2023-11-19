@@ -27,10 +27,8 @@ import (
 // Import resty into your code and refer it as `resty`.
 import "github.com/go-resty/resty/v2"
 
-// import "github.com/jessevdk/go-flags"
-// import "github.com/repeale/fp-go"
-import either "github.com/IBM/fp-go/either"
-import function "github.com/IBM/fp-go/function"
+import E "github.com/IBM/fp-go/either"
+import F "github.com/IBM/fp-go/function"
 
 type GithubUrls struct {
 	OrganizationUrl string `json:"organization_url"`
@@ -56,28 +54,28 @@ type User struct {
 	Login string `json:"login"`
 }
 
-func get(client *resty.Client, url string) either.Either[error, *resty.Response] {
+func get(client *resty.Client, url string) E.Either[error, *resty.Response] {
 	resp, err := client.R().
 		EnableTrace().
 		Get(url)
 	if err != nil {
-		return either.Left[*resty.Response](fmt.Errorf("Error getting url(%s): %w", url, err))
+		return E.Left[*resty.Response](fmt.Errorf("Error getting url(%s): %w", url, err))
 	}
-	return either.Right[error](resp)
+	return E.Right[error](resp)
 }
 
-func FromJson[T any](jsonString string) either.Either[error, T] {
+func FromJson[T any](jsonString string) E.Either[error, T] {
 	var val T
 	err := json.Unmarshal([]byte(jsonString), &val)
 	if err != nil {
-		return either.Left[T](fmt.Errorf("Error getting parsing into %T: %w", val, err))
+		return E.Left[T](fmt.Errorf("Error getting parsing into %T: %w", val, err))
 	}
-	return either.Right[error](val)
+	return E.Right[error](val)
 }
 
-func GetToJson[T any](client *resty.Client, url string) either.Either[error, T] {
-	return either.MonadChain(
-		either.MonadMap(
+func GetToJson[T any](client *resty.Client, url string) E.Either[error, T] {
+	return E.MonadChain(
+		E.MonadMap(
 			get(client, url),
 			GetResponseString,
 		),
@@ -89,25 +87,25 @@ func GetResponseString(resp *resty.Response) string {
 	return resp.String()
 }
 
-func GetGithubUrls(client *resty.Client) either.Either[error, GithubUrls] {
+func GetGithubUrls(client *resty.Client) E.Either[error, GithubUrls] {
 	return GetToJson[GithubUrls](client, "https://api.github.com")
 }
 
-func GetOrganizationInfo(client *resty.Client, organizationName string, githubUrls GithubUrls) either.Either[error, OrganizationInfo] {
+func GetOrganizationInfo(client *resty.Client, organizationName string, githubUrls GithubUrls) E.Either[error, OrganizationInfo] {
 	organizationUrl := githubUrls.OrganizationUrl
 	organizationUrl = strings.Replace(organizationUrl, "{org}", organizationName, 1)
 	return GetToJson[OrganizationInfo](client, organizationUrl)
 }
 
-func GetOrganizationRepos(client *resty.Client, organizationInfo OrganizationInfo) either.Either[error, []Repo] {
+func GetOrganizationRepos(client *resty.Client, organizationInfo OrganizationInfo) E.Either[error, []Repo] {
 	return GetToJson[[]Repo](client, organizationInfo.ReposUrl)
 }
 
-func GetUserInfo(client *resty.Client, contributor Contributor) either.Either[error, User] {
+func GetUserInfo(client *resty.Client, contributor Contributor) E.Either[error, User] {
 	return GetToJson[User](client, contributor.Url)
 }
 
-func GetContributors(client *resty.Client, mostPopular Repo) either.Either[error, []Contributor] {
+func GetContributors(client *resty.Client, mostPopular Repo) E.Either[error, []Contributor] {
 	return GetToJson[[]Contributor](client, mostPopular.ContributorsUrl)
 }
 
@@ -129,29 +127,32 @@ func GetBiggestContributor(contributors []Contributor) (biggestContributor Contr
 	return
 }
 
-func DoItFpStyle(organizationName string) either.Either[error, User] {
+func DoItFpStyle(organizationName string) E.Either[error, User] {
 	client := resty.New()
 
-	return function.Pipe6(
+	return F.Pipe6(
 		GetGithubUrls(client),
-		either.Chain(function.Curry3(GetOrganizationInfo)(client)(organizationName)),
-		either.Chain(function.Curry2(GetOrganizationRepos)(client)),
-		either.Map[error](GetMostPopularRepo),
-		either.Chain(function.Curry2(GetContributors)(client)),
-		either.Map[error](GetBiggestContributor),
-		either.Chain(function.Curry2(GetUserInfo)(client)),
+		E.Chain(F.Curry3(GetOrganizationInfo)(client)(organizationName)),
+		E.Chain(F.Curry2(GetOrganizationRepos)(client)),
+		E.Map[error](GetMostPopularRepo),
+		E.Chain(F.Curry2(GetContributors)(client)),
+		E.Map[error](GetBiggestContributor),
+		E.Chain(F.Curry2(GetUserInfo)(client)),
 	)
 
 }
 
 func main() {
 	fmt.Println(
-		either.Fold[error, User, string](
-			func(err error) string {
-				return fmt.Sprint("Error golang style:", err)
-			},
-			func(user User) string {
-				return fmt.Sprint("The largest contributor to go is:", user.Name, "(", user.Login, ")")
-			})(DoItFpStyle("golang")),
+		F.Pipe1(
+			DoItFpStyle("golang"),
+			E.Fold[error, User, string](
+				func(err error) string {
+					return fmt.Sprint("Error golang style:", err)
+				},
+				func(user User) string {
+					return fmt.Sprint("The largest contributor to go is:", user.Name, "(", user.Login, ")")
+				}),
+		),
 	)
 }
