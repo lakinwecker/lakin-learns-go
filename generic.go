@@ -141,7 +141,7 @@ func DoItFpStyle(organizationName string) either.Either[error, User] {
 	client := resty.New()
 
 	return function.Pipe6(
-		GetGithubUrls(resty.New()),
+		GetGithubUrls(client),
 		either.Chain(GetOrganizationInfo(client, organizationName)),
 		either.Chain(GetOrganizationRepos(client)),
 		either.Map[error](GetMostPopularRepo),
