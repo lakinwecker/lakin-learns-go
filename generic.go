@@ -19,7 +19,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -29,6 +28,7 @@ import "github.com/go-resty/resty/v2"
 
 import E "github.com/IBM/fp-go/either"
 import F "github.com/IBM/fp-go/function"
+import J "github.com/IBM/fp-go/json"
 
 type GithubUrls struct {
 	OrganizationUrl string `json:"organization_url"`
@@ -54,37 +54,22 @@ type User struct {
 	Login string `json:"login"`
 }
 
-func get(client *resty.Client, url string) E.Either[error, *resty.Response] {
-	resp, err := client.R().
-		EnableTrace().
-		Get(url)
-	if err != nil {
-		return E.Left[*resty.Response](fmt.Errorf("Error getting url(%s): %w", url, err))
-	}
-	return E.Right[error](resp)
-}
-
-func FromJson[T any](jsonString string) E.Either[error, T] {
-	var val T
-	err := json.Unmarshal([]byte(jsonString), &val)
-	if err != nil {
-		return E.Left[T](fmt.Errorf("Error getting parsing into %T: %w", val, err))
-	}
-	return E.Right[error](val)
-}
-
-func GetToJson[T any](client *resty.Client, url string) E.Either[error, T] {
-	return E.MonadChain(
-		E.MonadMap(
-			get(client, url),
-			GetResponseString,
-		),
-		FromJson[T],
+func Get(client *resty.Client, url string) E.Either[error, *resty.Response] {
+	return E.TryCatchError(
+		client.R().EnableTrace().Get(url),
 	)
 }
 
-func GetResponseString(resp *resty.Response) string {
-	return resp.String()
+func GetToJson[T any](client *resty.Client, url string) E.Either[error, T] {
+	return F.Pipe2(
+		Get(client, url),
+		E.Map[error](GetResponseBody),
+		E.Chain(J.Unmarshal[T]),
+	)
+}
+
+func GetResponseBody(resp *resty.Response) []byte {
+	return resp.Body()
 }
 
 func GetGithubUrls(client *resty.Client) E.Either[error, GithubUrls] {
@@ -146,7 +131,7 @@ func main() {
 	fmt.Println(
 		F.Pipe1(
 			DoItFpStyle("golang"),
-			E.Fold[error, User, string](
+			E.Fold(
 				func(err error) string {
 					return fmt.Sprint("Error golang style:", err)
 				},
